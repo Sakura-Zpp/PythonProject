@@ -101,6 +101,11 @@ print(f"训练集大小：{train_data_size}, 测试集大小：{test_data_size}"
 train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
 test_loader = DataLoader(test_data, batch_size=128, shuffle=False)
 
+#恢复训练配置
+RESUME_TRAINING = True  # 设置为 True 则恢复训练
+CHECKPOINT_PATH = "checkpoints/checkpoint_epoch80.pth"  # 指定检查点路径
+
+
 # 创建网络模型
 net = CIFAR10_Net()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -127,6 +132,35 @@ total_train_step = 0
 total_test_step = 0
 epoch = 100
 best_accuracy = 0.0
+start_epoch = 0
+
+if RESUME_TRAINING and os.path.exists(CHECKPOINT_PATH):
+    print(f"加载检查点：{CHECKPOINT_PATH}")
+    checkpoint = torch.load(CHECKPOINT_PATH, map_location=device,weights_only=True)
+
+    # 加载模型状态
+    net.load_state_dict(checkpoint['model_state_dict'])
+
+    # 加载优化器状态
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    # 恢复 epoch
+    start_epoch = checkpoint['epoch']
+
+    # 恢复最佳准确率
+    best_accuracy = checkpoint.get('accuracy', 0.0)
+
+    # 恢复学习率调度器状态
+    scheduler.load_state_dict(checkpoint.get('scheduler_state_dict', {}))
+
+    # 恢复 step 计数
+    total_test_step = start_epoch
+    total_train_step = start_epoch * len(train_loader)
+
+    print(f"成功恢复训练！从第 {start_epoch + 1} 轮开始")
+    print(f"当前最佳准确率：{best_accuracy:.4f}")
+else:
+    print("从头开始训练")
 
 # TensorBoard 可视化
 writer = SummaryWriter("logs/CIFAR10_Optimized")
@@ -135,7 +169,7 @@ writer = SummaryWriter("logs/CIFAR10_Optimized")
 os.makedirs("checkpoints", exist_ok=True)
 
 
-for i in range(epoch):
+for i in range(start_epoch,epoch):
     print(f"\n{'=' * 50}")
     print(f"第 {i + 1}/{epoch} 轮训练开始")
     print(f"当前学习率：{optimizer.param_groups[0]['lr']:.6f}")
@@ -221,6 +255,7 @@ for i in range(epoch):
             'epoch': i + 1,
             'model_state_dict': net.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
             'accuracy': test_accuracy,
         }, f"checkpoints/best_model_epoch{i + 1}_acc{test_accuracy:.4f}.pth")
         print(f" 保存最佳模型,准确率：{test_accuracy:.4f}")
